@@ -30,13 +30,9 @@ jobs:
         run: sudo apt-get update -y && sudo apt-get install -y upx;
 
       - name: Install Rust
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@stable
         with:
-          profile: minimal
           target: ${{ matrix.target }}
-          toolchain: nightly
-          default: true
-          override: true
 
       - name: Install cross
         run: cargo install cross
@@ -55,7 +51,7 @@ jobs:
           fi
 
           cd build
-          ./build-release.sh -t ${{ matrix.target }} $compile_features $compile_compress
+          ./build-release.sh -t ${{ matrix.target }} $compile_features $compile_compress -f js
 
       - name: Upload Github Assets
         uses: softprops/action-gh-release@v1
@@ -81,22 +77,17 @@ jobs:
       - name: Install Dependences
         if: runner.os == 'macOS'
         run: |
-          brew install gnu-tar pkg-config openssl
           echo "/usr/local/opt/gnu-tar/libexec/gnubin" >> $GITHUB_PATH
 
       - name: Install Rust
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@stable
         with:
-          profile: minimal
           target: ${{ matrix.target }}
-          toolchain: nightly
-          default: true
-          override: true
 
       - name: Build release
         shell: bash
         run: |
-          ./build/build-host-release.sh -t ${{ matrix.target }}
+          ./build/build-host-release.sh -t ${{ matrix.target }} -f js
 
       - name: Upload Github Assets
         uses: softprops/action-gh-release@v1

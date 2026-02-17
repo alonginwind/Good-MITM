@@ -1,8 +1,6 @@
 use crate::error::Error;
 use hyper::{client::HttpConnector, Client};
 use hyper_proxy::{Proxy as UpstreamProxy, ProxyConnector};
-use rustls::client::{ServerCertVerified, ServerCertVerifier};
-use std::time::SystemTime;
 
 cfg_if::cfg_if! {
     if #[cfg(feature = "request-native-tls")] {
@@ -55,12 +53,12 @@ pub fn gen_client(upstream_proxy: Option<UpstreamProxy>) -> Result<HttpClient, E
 
     if let Some(proxy) = upstream_proxy {
         let connector = ProxyConnector::from_proxy(https, proxy)?;
-        return Ok(HttpClient::Proxy(
+        Ok(HttpClient::Proxy(
             Client::builder()
                 .http1_title_case_headers(true)
                 .http1_preserve_header_case(true)
                 .build(connector),
-        ));
+        ))
     } else {
         Ok(HttpClient::Https(
             Client::builder()
@@ -71,9 +69,11 @@ pub fn gen_client(upstream_proxy: Option<UpstreamProxy>) -> Result<HttpClient, E
     }
 }
 
+#[cfg(not(feature = "request-native-tls"))]
 #[derive(Default)]
 struct TrustAllCertVerifier;
 
+#[cfg(not(feature = "request-native-tls"))]
 impl ServerCertVerifier for TrustAllCertVerifier {
     fn verify_server_cert(
         &self,
