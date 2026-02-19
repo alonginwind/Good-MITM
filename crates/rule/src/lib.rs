@@ -88,7 +88,7 @@ impl Rule {
                 }
 
                 #[cfg(feature = "js")]
-                Action::Js(ref code) => {
+                Action::JsReq(ref code) => {
                     info!("[LogRequest] {}", url);
                     if let Ok(req) = action::js::modify_req(code, tmp_req).await {
                         return RequestOrResponse::Request(req);
@@ -124,7 +124,7 @@ impl Rule {
                 }
 
                 #[cfg(feature = "js")]
-                Action::Js(ref code) => {
+                Action::JsRes(ref code) => {
                     info!("[LogResponse] {}", url);
                     if let Ok(res) = action::js::modify_res(code, tmp_res).await {
                         return res;

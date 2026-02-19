@@ -18,5 +18,6 @@ pub enum Action {
     LogReq,
 
     #[cfg(feature = "js")]
-    Js(String),
+    JsReq(String),
+    JsRes(String),
 }
