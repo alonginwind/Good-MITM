@@ -13,7 +13,6 @@ use rquickjs::{
 };
 use std::collections::HashMap;
 
-
 /// ============================================================
 /// 通用 HTTP → JS Object 宏
 /// req / res 共用
@@ -58,6 +57,40 @@ macro_rules! create_js_http_object {
     }};
 }
 
+/// ============================================================
+/// JS 返回 body 解析函数
+/// ============================================================
+fn parse_js_body(ret: &Object, original: &Bytes) -> Result<Bytes> {
+    // 1️⃣ string
+    if let Ok(Some(body_str)) = ret.get::<_, Option<String>>("body") {
+        return Ok(Bytes::from(body_str));
+    }
+
+    // 2️⃣ ArrayBuffer
+    if let Ok(Some(buffer)) = ret.get::<_, Option<ArrayBuffer>>("body") {
+        if let Some(bytes) = buffer.as_bytes() {
+            return Ok(Bytes::from(bytes.to_vec()));
+        } else {
+            return Ok(original.clone());
+        }
+    }
+
+    // 3️⃣ Uint8Array -> buffer
+    if let Ok(Some(obj)) = ret.get::<_, Option<Object>>("body") {
+        if let Ok(Some(buffer)) = obj.get::<_, Option<ArrayBuffer>>("buffer") {
+            if let Some(bytes) = buffer.as_bytes() {
+                return Ok(Bytes::from(bytes.to_vec()));
+            } else {
+                return Ok(original.clone());
+            }
+        } else {
+            return Ok(original.clone());
+        }
+    }
+
+    // fallback
+    Ok(original.clone())
+}
 
 /// ============================================================
 /// 修改请求
@@ -96,7 +129,7 @@ pub async fn modify_req(code: &str, req: Request<Body>) -> Result<Request<Body>>
         let ret: Object =
             ctx.eval(code).map_err(|e| anyhow!("JS Eval Error: {:?}", e))?;
 
-        // 处理 headers
+        // headers
         if let Ok(Some(headers_map)) =
             ret.get::<_, Option<HashMap<String, String>>>("headers")
         {
@@ -110,26 +143,19 @@ pub async fn modify_req(code: &str, req: Request<Body>) -> Result<Request<Body>>
             }
         }
 
-        // 处理 url
+        // url
         if let Ok(Some(url)) = ret.get::<_, Option<String>>("url") {
             if let Ok(uri) = url.parse() {
                 parts.uri = uri;
             }
         }
 
-        // 处理 body
-        let new_body = if let Ok(Some(body_str)) =
-            ret.get::<_, Option<String>>("body")
-        {
-            Bytes::from(body_str)
-        } else {
-            body_bytes.clone()
-        };
+        // body
+        let new_body = parse_js_body(&ret, &body_bytes)?;
 
         Ok(Request::from_parts(parts, Body::from(new_body)))
     })
 }
-
 
 /// ============================================================
 /// 修改响应
@@ -180,13 +206,7 @@ pub async fn modify_res(code: &str, res: Response<Body>) -> Result<Response<Body
         }
 
         // body
-        let new_body = if let Ok(Some(body_str)) =
-            ret.get::<_, Option<String>>("body")
-        {
-            Bytes::from(body_str)
-        } else {
-            body_bytes.clone()
-        };
+        let new_body = parse_js_body(&ret, &body_bytes)?;
 
         Ok(Response::from_parts(parts, Body::from(new_body)))
     })
