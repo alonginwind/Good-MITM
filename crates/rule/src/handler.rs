@@ -91,7 +91,7 @@ impl HttpHandler<RuleHandlerCtx> for RuleHttpHandler {
 
         let mut res = res;
         for rule in &ctx.custom_data.rules {
-            res = rule.do_res(res).await;
+            res = rule.do_res(res, uri).await;
         }
         res
     }

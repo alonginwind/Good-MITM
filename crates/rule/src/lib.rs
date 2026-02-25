@@ -5,6 +5,7 @@ use hyper::{header, header::HeaderValue, Body, Request, Response, StatusCode};
 use log::*;
 use mitm_core::mitm::RequestOrResponse;
 use std::vec::Vec;
+use http::Uri;
 
 mod action;
 mod cache;
@@ -108,8 +109,7 @@ impl Rule {
         RequestOrResponse::Request(tmp_req)
     }
 
-    pub async fn do_res(&self, res: Response<Body>) -> Response<Body> {
-        let url = self.url.clone().unwrap_or_default();
+    pub async fn do_res(&self, res: Response<Body>, url: &Uri) -> Response<Body> {
         let mut tmp_res = res;
 
         for action in &self.actions {
