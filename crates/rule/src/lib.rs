@@ -126,7 +126,7 @@ impl Rule {
                 #[cfg(feature = "js")]
                 Action::JsRes(ref code) => {
                     info!("[LogResponse] {}", url);
-                    if let Ok(res) = action::js::modify_res(code, tmp_res).await {
+                    if let Ok(res) = action::js::modify_res(code, url, tmp_res).await {
                         return res;
                     } else {
                         return Response::builder()

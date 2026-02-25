@@ -1,5 +1,5 @@
 use anyhow::{anyhow, Result};
-use http::{header::HeaderName, Response};
+use http::{header::HeaderName, Response, Uri};
 use hyper::{
     body::{to_bytes, Body, Bytes},
     Request,
@@ -44,11 +44,9 @@ pub async fn modify_req(code: &str, req: Request<Body>) -> Result<Request<Body>>
         JsValue::String(parts.method.to_string()),
     );
     req_js.insert("url".to_owned(), JsValue::String(parts.uri.to_string()));
-    let mut data = HashMap::new();
-    data.insert("request".to_owned(), JsValue::Object(req_js));
 
     let context = Context::builder().console(LogConsole).build()?;
-    context.set_global("data", JsValue::Object(data))?;
+    context.set_global("$request", JsValue::Object(req_js))?;
     match context.eval(code) {
         Ok(req_js) => {
             if let JsValue::Object(req_js) = req_js {
@@ -81,19 +79,20 @@ pub async fn modify_req(code: &str, req: Request<Body>) -> Result<Request<Body>>
     }
 }
 
-pub async fn modify_res(code: &str, res: Response<Body>) -> Result<Response<Body>> {
+pub async fn modify_res(code: &str, req_url: &Uri, res: Response<Body>) -> Result<Response<Body>> {
     let (mut parts, body) = res.into_parts();
     let body_bytes = to_bytes(body).await.unwrap_or_default();
+    let mut req_js = HashMap::new();
+    req_js.insert("url".to_owned(), JsValue::String(req_url.to_string()));
     let res_js = to_js_value_map!(parts, body_bytes);
-    let mut data = HashMap::new();
-    data.insert("response".to_owned(), JsValue::Object(res_js));
 
     let context = Context::builder().console(LogConsole).build()?;
-    context.set_global("data", JsValue::Object(data))?;
+    context.set_global("$request", JsValue::Object(req_js))?;
+    context.set_global("$response", JsValue::Object(res_js))?;
     match context.eval(code) {
-        Ok(req_js) => {
-            if let JsValue::Object(req_js) = req_js {
-                if let Some(JsValue::Object(headers)) = req_js.get("headers") {
+        Ok(res_js) => {
+            if let JsValue::Object(res_js) = res_js {
+                if let Some(JsValue::Object(headers)) = res_js.get("headers") {
                     for (key, value) in headers {
                         if let JsValue::String(value) = value {
                             parts.headers.insert(
@@ -104,7 +103,7 @@ pub async fn modify_res(code: &str, res: Response<Body>) -> Result<Response<Body
                     }
                 }
 
-                let body = if let Some(JsValue::String(body)) = req_js.get("body") {
+                let body = if let Some(JsValue::String(body)) = res_js.get("body") {
                     Bytes::from(body.to_owned())
                 } else {
                     body_bytes
