@@ -28,10 +28,12 @@ impl Rule {
 
         for action in &self.actions {
             match action {
-                Action::Reject => {
-                    info!("[Reject] {}", url);
+                Action::Reject(status_code) => {
+                    let status = StatusCode::from_u16(*status_code)
+                        .unwrap_or(StatusCode::BAD_GATEWAY);
+                    info!("[Reject-{}] {}", status, url);
                     let res = Response::builder()
-                        .status(StatusCode::BAD_GATEWAY)
+                        .status(status)
                         .body(Body::default())
                         .unwrap();
 

@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Action {
-    Reject,
+    Reject(u16),
     Redirect(String),
     ModifyRequest(Modify),
     ModifyResponse(Modify),
