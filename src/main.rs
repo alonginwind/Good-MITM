@@ -37,9 +37,9 @@ struct Run {
     key: String,
     #[clap(short, long, default_value = "ca/cert.crt", help = "cert file path")]
     cert: String,
-    #[clap(short, long, help = "load rules from file or dir")]
+    #[clap(short, long, default_value = "rules/", help = "load rules from file or dir")]
     rule: String,
-    #[clap(short, long, default_value = "127.0.0.1:34567", help = "bind address")]
+    #[clap(short, long, default_value = "0.0.0.0:34567", help = "bind address")]
     bind: String,
     #[clap(short, long, help = "upstream proxy")]
     proxy: Option<String>,
