@@ -1,118 +1,113 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Result};
 use http::{header::HeaderName, Response, Uri};
 use hyper::{
     body::{to_bytes, Body, Bytes},
     Request,
 };
-use quick_js::{console::LogConsole, Context, JsValue};
-use std::collections::HashMap;
+use rquickjs::{Runtime, Context, Object};
+use std::str::FromStr;
+use rquickjs_extra_console::{Console, Formatter};
 
-macro_rules! to_js_value_map {
-    ($parts:ident, $body_bytes:ident) => {{
-        let mut req_js = HashMap::new();
+macro_rules! to_js_object {
+    ($ctx:expr, $parts:expr, $body_bytes:expr) => {{
+        let console = Console::new("js-action", Formatter::default());
+        $ctx.globals().set("console", console)?;
+
+        let obj = Object::new($ctx.clone())?;
 
         // headers
-        let headers = {
-            let mut headers = HashMap::new();
-            for (name, value) in &$parts.headers {
-                headers.insert(
-                    name.to_string(),
-                    JsValue::String(value.to_str().unwrap_or_default().to_owned()),
-                );
-            }
-            headers
-        };
-        req_js.insert("headers".to_owned(), JsValue::Object(headers));
+        let headers = Object::new($ctx.clone())?;
+        for (name, value) in &$parts.headers {
+            headers.set(
+                name.to_string(),
+                value.to_str().unwrap_or_default(),
+            )?;
+        }
+        obj.set("headers", headers)?;
 
-        // body text
+        // body
         if let Ok(text) = String::from_utf8($body_bytes.to_vec()) {
-            req_js.insert("body".to_owned(), JsValue::String(text));
-        } else {
-            req_js.insert("body".to_owned(), JsValue::Undefined);
+            obj.set("body", text)?;
         }
 
-        req_js
+        obj
     }};
 }
 
 pub async fn modify_req(code: &str, req: Request<Body>) -> Result<Request<Body>> {
     let (mut parts, body) = req.into_parts();
     let body_bytes = to_bytes(body).await.unwrap_or_default();
-    let mut req_js = to_js_value_map!(parts, body_bytes);
-    req_js.insert(
-        "method".to_owned(),
-        JsValue::String(parts.method.to_string()),
-    );
-    req_js.insert("url".to_owned(), JsValue::String(parts.uri.to_string()));
 
-    let context = Context::builder().console(LogConsole).build()?;
-    context.set_global("$request", JsValue::Object(req_js))?;
-    match context.eval(code) {
-        Ok(req_js) => {
-            if let JsValue::Object(req_js) = req_js {
-                if let Some(JsValue::Object(headers)) = req_js.get("headers") {
-                    for (key, value) in headers {
-                        if let JsValue::String(value) = value {
-                            parts.headers.insert(
-                                HeaderName::from_bytes(key.as_bytes()).unwrap(),
-                                value.parse().unwrap(),
-                            );
-                        }
-                    }
-                }
+    let runtime = Runtime::new()?;
+    let context = Context::full(&runtime)?;
+    context.with(|ctx| -> Result<_> {
+        let req_obj = to_js_object!(&ctx, &parts, &body_bytes);
+        req_obj.set("method", parts.method.to_string())?;
+        req_obj.set("url", parts.uri.to_string())?;
 
-                if let Some(JsValue::String(url)) = req_js.get("url") {
-                    parts.uri = url.parse().unwrap();
-                }
+        let globals = ctx.globals();
+        globals.set("$request", req_obj)?;
+        let result: Object = ctx.eval(code)?;
 
-                let body = if let Some(JsValue::String(body)) = req_js.get("body") {
-                    Bytes::from(body.to_owned())
-                } else {
-                    body_bytes
-                };
-                Ok(Request::from_parts(parts, Body::from(body)))
-            } else {
-                Err(anyhow!("can not get js eval ret"))
+        // headers
+        if let Ok(headers) = result.get::<_, Object>("headers") {
+            for entry in headers.props::<String, String>() {
+                let (key, value) = entry?;
+                parts.headers.insert(
+                    HeaderName::from_str(&key)?,
+                    value.parse()?,
+                );
             }
         }
-        Err(err) => Err(err.into()),
-    }
+
+        // url
+        if let Ok(url) = result.get::<_, String>("url") {
+            parts.uri = url.parse()?;
+        }
+
+        // body
+        let body = if let Ok(body) = result.get::<_, String>("body") {
+            Bytes::from(body)
+        } else {
+            body_bytes
+        };
+        Ok(Request::from_parts(parts, Body::from(body)))
+    })
 }
 
 pub async fn modify_res(code: &str, req_url: &Uri, res: Response<Body>) -> Result<Response<Body>> {
     let (mut parts, body) = res.into_parts();
     let body_bytes = to_bytes(body).await.unwrap_or_default();
-    let mut req_js = HashMap::new();
-    req_js.insert("url".to_owned(), JsValue::String(req_url.to_string()));
-    let res_js = to_js_value_map!(parts, body_bytes);
 
-    let context = Context::builder().console(LogConsole).build()?;
-    context.set_global("$request", JsValue::Object(req_js))?;
-    context.set_global("$response", JsValue::Object(res_js))?;
-    match context.eval(code) {
-        Ok(res_js) => {
-            if let JsValue::Object(res_js) = res_js {
-                if let Some(JsValue::Object(headers)) = res_js.get("headers") {
-                    for (key, value) in headers {
-                        if let JsValue::String(value) = value {
-                            parts.headers.insert(
-                                HeaderName::from_bytes(key.as_bytes()).unwrap(),
-                                value.parse().unwrap(),
-                            );
-                        }
-                    }
-                }
+    let runtime = Runtime::new()?;
+    let context = Context::full(&runtime)?;
+    context.with(|ctx| -> Result<_> {
+        let req_obj = Object::new(ctx.clone())?;
+        req_obj.set("url", req_url.to_string())?;
+        let res_obj = to_js_object!(&ctx, &parts, &body_bytes);
 
-                let body = if let Some(JsValue::String(body)) = res_js.get("body") {
-                    Bytes::from(body.to_owned())
-                } else {
-                    body_bytes
-                };
-                Ok(Response::from_parts(parts, Body::from(body)))
-            } else {
-                Err(anyhow!("can not get js eval ret"))
+        let globals = ctx.globals();
+        globals.set("$request", req_obj)?;
+        globals.set("$response", res_obj)?;
+        let result: Object = ctx.eval(code)?;
+
+        // headers
+        if let Ok(headers) = result.get::<_, Object>("headers") {
+            for entry in headers.props::<String, String>() {
+                let (key, value) = entry?;
+                parts.headers.insert(
+                    HeaderName::from_str(&key)?,
+                    value.parse()?,
+                );
             }
         }
-        Err(err) => Err(err.into()),
-    }
+
+        // body
+        let body = if let Ok(body) = result.get::<_, String>("body") {
+            Bytes::from(body)
+        } else {
+            body_bytes
+        };
+        Ok(Response::from_parts(parts, Body::from(body)))
+    })
 }
