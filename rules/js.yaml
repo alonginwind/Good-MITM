@@ -3,22 +3,24 @@
   filters:
     url-regex: '^https?:\/\/www\.baidu\.com'
   actions:
-    js: |
-      function process() {
+    js-res: |
+      async function process() {
         console.log("from quick_js");
 
-        if (data.request != undefined) {
-          let req = data.request;
-          console.log(req.headers["user-agent"]);
-          return req;
+        if ($request != undefined) {
+          let req = $request;
+          console.log(req.url);
         }
-        if (data.response != undefined) {
-          let res = data.response;
+        if ($response != undefined) {
+          let res = $response;
           if (res.body != undefined) {
             res.body = res.body.replaceAll("百度", "百毒");
           }
-          return res;
+          $done({body: res.body});
         }
       }
-      process()
-      
+
+      process().catch(err => {
+        console.log("Error:", err.message);
+        $done({});
+      });

@@ -93,15 +93,40 @@ impl Rule {
                 #[cfg(feature = "js")]
                 Action::JsReq(ref code) => {
                     info!("[LogRequest] {}", url);
-                    if let Ok(req) = action::js::modify_req(code, tmp_req).await {
-                        return RequestOrResponse::Request(req);
-                    } else {
-                        return RequestOrResponse::Response(
-                            Response::builder()
-                                .status(StatusCode::BAD_REQUEST)
-                                .body(Body::default())
-                                .unwrap(),
-                        );
+                    // 提取需要在闭包中使用的数据
+                    let code = code.clone();
+                    // 使用 spawn_blocking 处理非 Send 的 JS 执行
+                    let result = tokio::task::spawn_blocking(move || {
+                        // 创建新的运行时用于 JS 执行
+                        let runtime = tokio::runtime::Runtime::new()
+                            .expect("Failed to create runtime for JS execution");
+                        runtime.block_on(async {
+                            action::js::modify_req(&code, tmp_req).await
+                        })
+                    }).await;
+
+                    match result {
+                        Ok(Ok(modified_req)) => {
+                            tmp_req = modified_req;  // 更新响应，继续处理后续 actions
+                        }
+                        Ok(Err(e)) => {
+                            error!("JS error: {}", e);
+                            return RequestOrResponse::Response(
+                                Response::builder()
+                                    .status(StatusCode::BAD_REQUEST)
+                                    .body(Body::default())
+                                    .unwrap(),
+                            );
+                        }
+                        Err(e) => {
+                            error!("Spawn error: {}", e);
+                            return RequestOrResponse::Response(
+                                Response::builder()
+                                    .status(StatusCode::BAD_REQUEST)
+                                    .body(Body::default())
+                                    .unwrap(),
+                            );
+                        }
                     }
                 }
                 _ => {}
@@ -128,13 +153,37 @@ impl Rule {
                 #[cfg(feature = "js")]
                 Action::JsRes(ref code) => {
                     info!("[LogResponse] {}", url);
-                    if let Ok(res) = action::js::modify_res(code, url, tmp_res).await {
-                        return res;
-                    } else {
-                        return Response::builder()
-                            .status(StatusCode::BAD_REQUEST)
-                            .body(Body::default())
-                            .unwrap();
+                    // 提取需要在闭包中使用的数据
+                    let code = code.clone();
+                    let url = url.clone();
+                    // 使用 spawn_blocking 处理非 Send 的 JS 执行
+                    let result = tokio::task::spawn_blocking(move || {
+                        // 创建新的运行时用于 JS 执行
+                        let runtime = tokio::runtime::Runtime::new()
+                            .expect("Failed to create runtime for JS execution");
+                        runtime.block_on(async {
+                            action::js::modify_res(&code, &url, tmp_res).await
+                        })
+                    }).await;
+
+                    match result {
+                        Ok(Ok(modified_res)) => {
+                            tmp_res = modified_res;  // 更新响应，继续处理后续 actions
+                        }
+                        Ok(Err(e)) => {
+                            error!("JS error: {}", e);
+                            return Response::builder()
+                                .status(StatusCode::BAD_REQUEST)
+                                .body(Body::default())
+                                .unwrap();
+                        }
+                        Err(e) => {
+                            error!("Spawn error: {}", e);
+                            return Response::builder()
+                                .status(StatusCode::BAD_REQUEST)
+                                .body(Body::default())
+                                .unwrap();
+                        }
                     }
                 }
                 _ => {}

@@ -19,10 +19,11 @@ fancy-regex = "0.11"
 http = "0.2"
 hyper = { version = "0.14", features = ["client", "http1", "server", "stream", "tcp"]  }
 log = "0.4"
-rquickjs = { version = "0.11", optional = true }
+rquickjs = { version = "0.11.0", features = ["full-async"], optional = true }
 serde = { version = "1.0", features = ["derive"] }
 rquickjs-extra-console = { version = "0.2.1", optional = true }
+tokio = { version = "1.44", optional = true }
 
 [features]
 default = []
-js = ["rquickjs", "rquickjs-extra-console"]
+js = ["rquickjs", "rquickjs-extra-console", "tokio"]
