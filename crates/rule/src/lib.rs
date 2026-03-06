@@ -1,11 +1,11 @@
 pub use action::Action;
 pub use filter::Filter;
 pub use handler::*;
+use http::Uri;
 use hyper::{header, header::HeaderValue, Body, Request, Response, StatusCode};
 use log::*;
 use mitm_core::mitm::RequestOrResponse;
 use std::vec::Vec;
-use http::Uri;
 
 mod action;
 mod cache;
@@ -29,8 +29,8 @@ impl Rule {
         for action in &self.actions {
             match action {
                 Action::Reject(status_code) => {
-                    let status = StatusCode::from_u16(*status_code)
-                        .unwrap_or(StatusCode::BAD_GATEWAY);
+                    let status =
+                        StatusCode::from_u16(*status_code).unwrap_or(StatusCode::BAD_GATEWAY);
                     info!("[Reject-{}] {}", status, url);
                     let res = Response::builder()
                         .status(status)
@@ -100,14 +100,13 @@ impl Rule {
                         // 创建新的运行时用于 JS 执行
                         let runtime = tokio::runtime::Runtime::new()
                             .expect("Failed to create runtime for JS execution");
-                        runtime.block_on(async {
-                            action::js::modify_req(&code, tmp_req).await
-                        })
-                    }).await;
+                        runtime.block_on(async { action::js::modify_req(&code, tmp_req).await })
+                    })
+                    .await;
 
                     match result {
                         Ok(Ok(modified_req)) => {
-                            tmp_req = modified_req;  // 更新响应，继续处理后续 actions
+                            tmp_req = modified_req; // 更新响应，继续处理后续 actions
                         }
                         Ok(Err(e)) => {
                             error!("JS error: {}", e);
@@ -161,14 +160,14 @@ impl Rule {
                         // 创建新的运行时用于 JS 执行
                         let runtime = tokio::runtime::Runtime::new()
                             .expect("Failed to create runtime for JS execution");
-                        runtime.block_on(async {
-                            action::js::modify_res(&code, &url, tmp_res).await
-                        })
-                    }).await;
+                        runtime
+                            .block_on(async { action::js::modify_res(&code, &url, tmp_res).await })
+                    })
+                    .await;
 
                     match result {
                         Ok(Ok(modified_res)) => {
-                            tmp_res = modified_res;  // 更新响应，继续处理后续 actions
+                            tmp_res = modified_res; // 更新响应，继续处理后续 actions
                         }
                         Ok(Err(e)) => {
                             error!("JS error: {}", e);

@@ -1,12 +1,15 @@
-use anyhow::{Result};
+use anyhow::Result;
 use http::{header::HeaderName, Response, Uri};
 use hyper::{
     body::{to_bytes, Body, Bytes},
     Request,
 };
-use rquickjs::{async_with, AsyncRuntime, AsyncContext, CatchResultExt, Object, function::Func, Value, Error, TypedArray, ArrayBuffer, Function};
-use std::{str::FromStr, rc::Rc, cell::RefCell, collections::HashMap};
+use rquickjs::{
+    async_with, function::Func, ArrayBuffer, AsyncContext, AsyncRuntime, CatchResultExt, Error,
+    Function, Object, TypedArray, Value,
+};
 use rquickjs_extra_console::{Console, Formatter};
+use std::{cell::RefCell, collections::HashMap, rc::Rc, str::FromStr};
 
 macro_rules! to_js_object {
     ($ctx:expr, $parts:expr, $body_bytes:expr) => {{
@@ -18,10 +21,7 @@ macro_rules! to_js_object {
         // headers
         let headers = Object::new($ctx.clone())?;
         for (name, value) in &$parts.headers {
-            headers.set(
-                name.to_string(),
-                value.to_str().unwrap_or_default(),
-            )?;
+            headers.set(name.to_string(), value.to_str().unwrap_or_default())?;
         }
         obj.set("headers", headers)?;
 
@@ -69,11 +69,11 @@ pub async fn modify_req(code: &str, req: Request<Body>) -> Result<Request<Body>>
                 let body: Vec<u8> = if let Ok(body_str) = obj_ref.get::<_, String>("body") {
                     log::info!("收到字符串数据");
                     body_str.into_bytes()
-                } else if let Ok(body_binary) = obj_ref.get::<_, TypedArray<u8>>("bodyBytes") {
+                } else if let Ok(body_binary) = obj_ref.get::<_, TypedArray<u8>>("body") {
                     // TypedArray: as_bytes() 返回 Option<&[u8]>
                     log::info!("收到TypedArray数据");
                     body_binary.as_bytes().map(|bytes| bytes.to_vec()).unwrap_or_default()
-                } else if let Ok(body_array) = obj_ref.get::<_, ArrayBuffer>("bodyBytes") {
+                } else if let Ok(body_array) = obj_ref.get::<_, ArrayBuffer>("body") {
                     // ArrayBuffer: as_bytes() 返回 Option<&[u8]>
                     log::info!("收到ArrayBuffer数据");
                     body_array.as_bytes().map(|bytes| bytes.to_vec()).unwrap_or_default()
@@ -203,11 +203,11 @@ pub async fn modify_res(code: &str, req_url: &Uri, res: Response<Body>) -> Resul
                 let body: Vec<u8> = if let Ok(body_str) = obj_ref.get::<_, String>("body") {
                     log::info!("收到字符串数据");
                     body_str.into_bytes()
-                } else if let Ok(body_binary) = obj_ref.get::<_, TypedArray<u8>>("bodyBytes") {
+                } else if let Ok(body_binary) = obj_ref.get::<_, TypedArray<u8>>("body") {
                     // TypedArray: as_bytes() 返回 Option<&[u8]>
                     log::info!("收到TypedArray数据");
                     body_binary.as_bytes().map(|bytes| bytes.to_vec()).unwrap_or_default()
-                } else if let Ok(body_array) = obj_ref.get::<_, ArrayBuffer>("bodyBytes") {
+                } else if let Ok(body_array) = obj_ref.get::<_, ArrayBuffer>("body") {
                     // ArrayBuffer: as_bytes() 返回 Option<&[u8]>
                     log::info!("收到ArrayBuffer数据");
                     body_array.as_bytes().map(|bytes| bytes.to_vec()).unwrap_or_default()
