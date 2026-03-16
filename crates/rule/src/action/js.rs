@@ -1,5 +1,5 @@
 use anyhow::Result;
-use http::{header::HeaderName, Response, Uri};
+use http::{header::HeaderName, Response};
 use hyper::{
     body::{to_bytes, Body, Bytes},
     Request,
@@ -15,6 +15,7 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::sync::{Mutex, OnceLock};
 use std::{cell::RefCell, collections::HashMap, rc::Rc, str::FromStr};
+use crate::handler::RequestInfo;
 
 static BYTECODE_CACHE: OnceLock<Mutex<HashMap<u64, Vec<u8>>>> = OnceLock::new();
 
@@ -187,7 +188,7 @@ pub async fn modify_req(code: &str, req: Request<Body>) -> Result<Request<Body>>
     }).await
 }
 
-pub async fn modify_res(code: &str, req_url: &Uri, res: Response<Body>) -> Result<Response<Body>> {
+pub async fn modify_res(code: &str, req_info: Option<RequestInfo>, res: Response<Body>) -> Result<Response<Body>> {
     let (mut parts, body) = res.into_parts();
     let body_bytes = to_bytes(body).await.unwrap_or_default();
 
@@ -222,8 +223,13 @@ pub async fn modify_res(code: &str, req_url: &Uri, res: Response<Body>) -> Resul
 
     async_with!(context => |ctx| {
         let req_obj = Object::new(ctx.clone())?;
-        req_obj.set("url", req_url.to_string())?;
+        if let Some(req_info) = req_info {
+            req_obj.set("url", req_info.uri.to_string())?;
+            req_obj.set("method", req_info.method.to_string())?;
+        }
         let res_obj = to_js_object!(&ctx, &parts, &body_bytes);
+        let status_code = parts.status.as_u16();
+        res_obj.set("status", status_code)?;
 
         // $done
         let result_data: Rc<RefCell<Option<(Vec<(String, String)>, Vec<u8>)>>> = Rc::new(RefCell::new(None));

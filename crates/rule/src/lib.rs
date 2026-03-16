@@ -1,7 +1,6 @@
 pub use action::Action;
 pub use filter::Filter;
 pub use handler::*;
-use http::Uri;
 use hyper::{header, header::HeaderValue, Body, Request, Response, StatusCode};
 use log::*;
 use mitm_core::mitm::RequestOrResponse;
@@ -135,7 +134,8 @@ impl Rule {
         RequestOrResponse::Request(tmp_req)
     }
 
-    pub async fn do_res(&self, res: Response<Body>, url: &Uri) -> Response<Body> {
+    pub async fn do_res(&self, res: Response<Body>, req_info: Option<RequestInfo>) -> Response<Body> {
+        let url = req_info.as_ref().map(|r| r.uri.to_string()).unwrap_or_default();
         let mut tmp_res = res;
 
         for action in &self.actions {
@@ -154,14 +154,14 @@ impl Rule {
                     info!("[LogResponse] {}", url);
                     // 提取需要在闭包中使用的数据
                     let code = code.clone();
-                    let url = url.clone();
+                    let req_info = req_info.clone();
                     // 使用 spawn_blocking 处理非 Send 的 JS 执行
                     let result = tokio::task::spawn_blocking(move || {
                         // 创建新的运行时用于 JS 执行
                         let runtime = tokio::runtime::Runtime::new()
                             .expect("Failed to create runtime for JS execution");
                         runtime
-                            .block_on(async { action::js::modify_res(&code, &url, tmp_res).await })
+                            .block_on(async { action::js::modify_res(&code, req_info, tmp_res).await })
                     })
                     .await;
 

@@ -7,6 +7,7 @@ use mitm_core::{
     mitm::{HttpContext, RequestOrResponse},
 };
 use std::sync::Arc;
+use http::{Uri, Method};
 
 #[derive(Clone)]
 pub struct RuleHttpHandler {
@@ -14,8 +15,15 @@ pub struct RuleHttpHandler {
 }
 
 #[derive(Default, Clone)]
+pub struct RequestInfo {
+    pub uri: Uri,
+    pub method: Method,
+}
+
+#[derive(Default, Clone)]
 pub struct RuleHandlerCtx {
     rules: Vec<Rule>,
+    req_info: Option<RequestInfo>,
 }
 
 impl CustomContextData for RuleHandlerCtx {}
@@ -46,6 +54,11 @@ impl HttpHandler<RuleHandlerCtx> for RuleHttpHandler {
         req: Request<Body>,
     ) -> RequestOrResponse {
         ctx.uri = Some(req.uri().clone());
+
+        ctx.custom_data.req_info = Some(RequestInfo {
+            uri: req.uri().clone(),
+            method: req.method().clone(),
+        });
 
         // remove accept-encoding to avoid encoded body
         let mut req = req;
@@ -91,7 +104,7 @@ impl HttpHandler<RuleHandlerCtx> for RuleHttpHandler {
 
         let mut res = res;
         for rule in &ctx.custom_data.rules {
-            res = rule.do_res(res, uri).await;
+            res = rule.do_res(res, ctx.custom_data.req_info.clone()).await;
         }
         res
     }
