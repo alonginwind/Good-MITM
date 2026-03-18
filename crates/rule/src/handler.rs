@@ -1,5 +1,6 @@
 use crate::Rule;
 use async_trait::async_trait;
+use http::{Method, Uri};
 use hyper::{header, Body, Request, Response};
 use log::info;
 use mitm_core::{
@@ -7,7 +8,6 @@ use mitm_core::{
     mitm::{HttpContext, RequestOrResponse},
 };
 use std::sync::Arc;
-use http::{Uri, Method};
 
 #[derive(Clone)]
 pub struct RuleHttpHandler {
@@ -15,15 +15,17 @@ pub struct RuleHttpHandler {
 }
 
 #[derive(Default, Clone)]
-pub struct RequestInfo {
+pub struct JsInfo {
     pub uri: Uri,
     pub method: Method,
+    pub requires_body: i32,
+    pub binary_body_mode: i32,
 }
 
 #[derive(Default, Clone)]
 pub struct RuleHandlerCtx {
     rules: Vec<Rule>,
-    req_info: Option<RequestInfo>,
+    js_info: JsInfo,
 }
 
 impl CustomContextData for RuleHandlerCtx {}
@@ -55,10 +57,12 @@ impl HttpHandler<RuleHandlerCtx> for RuleHttpHandler {
     ) -> RequestOrResponse {
         ctx.uri = Some(req.uri().clone());
 
-        ctx.custom_data.req_info = Some(RequestInfo {
+        ctx.custom_data.js_info = JsInfo {
             uri: req.uri().clone(),
             method: req.method().clone(),
-        });
+            requires_body: 0,
+            binary_body_mode: 0,
+        };
 
         // remove accept-encoding to avoid encoded body
         let mut req = req;
@@ -71,7 +75,7 @@ impl HttpHandler<RuleHandlerCtx> for RuleHttpHandler {
 
         for mut rule in rules {
             ctx.custom_data.rules.push(rule.clone());
-            let rt = rule.do_req(req).await;
+            let rt = rule.do_req(req, &ctx.custom_data.js_info).await;
             if let RequestOrResponse::Request(r) = rt {
                 req = r;
             } else {
@@ -104,7 +108,7 @@ impl HttpHandler<RuleHandlerCtx> for RuleHttpHandler {
 
         let mut res = res;
         for rule in &ctx.custom_data.rules {
-            res = rule.do_res(res, ctx.custom_data.req_info.clone()).await;
+            res = rule.do_res(res, &ctx.custom_data.js_info).await;
         }
         res
     }

@@ -1,3 +1,4 @@
+use crate::handler::JsInfo;
 use anyhow::Result;
 use http::{header::HeaderName, Response};
 use hyper::{
@@ -15,7 +16,6 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::sync::{Mutex, OnceLock};
 use std::{cell::RefCell, collections::HashMap, rc::Rc, str::FromStr};
-use crate::handler::RequestInfo;
 
 static BYTECODE_CACHE: OnceLock<Mutex<HashMap<u64, Vec<u8>>>> = OnceLock::new();
 
@@ -30,7 +30,13 @@ fn code_hash(code: &str) -> u64 {
 }
 
 macro_rules! to_js_object {
-    ($ctx:expr, $parts:expr, $body_bytes:expr) => {{
+    (
+        $ctx:expr,
+        $parts:expr,
+        $body_bytes:expr,
+        $requires_body:expr,
+        $binary_body_mode:expr
+    ) => {{
         let console = Console::new("js-action", Formatter::default());
         $ctx.globals().set("console", console)?;
 
@@ -43,20 +49,22 @@ macro_rules! to_js_object {
         }
         obj.set("headers", headers)?;
 
-        let body_bytes = $body_bytes.to_vec();
-        // body
-        if let Ok(text) = std::str::from_utf8(&body_bytes) {
-            obj.set("body", text)?;
+        if $requires_body == 1 {
+            // body
+            let body_bytes = $body_bytes.to_vec();
+            if $binary_body_mode == 1 {
+                let uint8_array = TypedArray::<u8>::new($ctx.clone(), body_bytes)?;
+                obj.set("body", uint8_array)?;
+            } else if let Ok(text) = std::str::from_utf8(&body_bytes) {
+                obj.set("body", text)?;
+            }
         }
-        // 始终提供 bodyBytes 字段（二进制数据）
-        let uint8_array = TypedArray::<u8>::new($ctx.clone(), body_bytes)?;
-        obj.set("bodyBytes", uint8_array)?;
 
         obj
     }};
 }
 
-pub async fn modify_req(code: &str, req: Request<Body>) -> Result<Request<Body>> {
+pub async fn modify_req(code: &str, js_info: &JsInfo, req: Request<Body>) -> Result<Request<Body>> {
     let (mut parts, body) = req.into_parts();
     let body_bytes = to_bytes(body).await.unwrap_or_default();
 
@@ -90,7 +98,7 @@ pub async fn modify_req(code: &str, req: Request<Body>) -> Result<Request<Body>>
     };
 
     async_with!(context => |ctx| {
-        let req_obj = to_js_object!(&ctx, &parts, &body_bytes);
+        let req_obj = to_js_object!(&ctx, &parts, &body_bytes, js_info.requires_body, js_info.binary_body_mode);
         req_obj.set("method", parts.method.to_string())?;
         req_obj.set("url", parts.uri.to_string())?;
 
@@ -188,7 +196,11 @@ pub async fn modify_req(code: &str, req: Request<Body>) -> Result<Request<Body>>
     }).await
 }
 
-pub async fn modify_res(code: &str, req_info: Option<RequestInfo>, res: Response<Body>) -> Result<Response<Body>> {
+pub async fn modify_res(
+    code: &str,
+    js_info: &JsInfo,
+    res: Response<Body>,
+) -> Result<Response<Body>> {
     let (mut parts, body) = res.into_parts();
     let body_bytes = to_bytes(body).await.unwrap_or_default();
 
@@ -223,11 +235,9 @@ pub async fn modify_res(code: &str, req_info: Option<RequestInfo>, res: Response
 
     async_with!(context => |ctx| {
         let req_obj = Object::new(ctx.clone())?;
-        if let Some(req_info) = req_info {
-            req_obj.set("url", req_info.uri.to_string())?;
-            req_obj.set("method", req_info.method.to_string())?;
-        }
-        let res_obj = to_js_object!(&ctx, &parts, &body_bytes);
+        req_obj.set("url", js_info.uri.to_string())?;
+        req_obj.set("method", js_info.method.to_string())?;
+        let res_obj = to_js_object!(&ctx, &parts, &body_bytes, js_info.requires_body, js_info.binary_body_mode);
         let status_code = parts.status.as_u16();
         res_obj.set("status", status_code)?;
 

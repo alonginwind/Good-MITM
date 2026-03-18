@@ -18,6 +18,19 @@ pub enum Action {
     LogReq,
 
     #[cfg(feature = "js")]
-    JsReq(String),
-    JsRes(String),
+    JsReq {
+        code: String,
+        #[serde(rename = "requires-body", default)]
+        requires_body: i32,
+        #[serde(rename = "binary-body-mode", default)]
+        binary_body_mode: i32,
+    },
+    #[cfg(feature = "js")]
+    JsRes {
+        code: String,
+        #[serde(rename = "requires-body", default)]
+        requires_body: i32,
+        #[serde(rename = "binary-body-mode", default)]
+        binary_body_mode: i32,
+    },
 }
