@@ -1,0 +1,18 @@
+name: spotify
+desc: 部分解锁premium,建议重新登录,音质不能设置为超高
+http:
+  mitm:
+    - 'spclient.wg.spotify.com'
+    - '*spclient.spotify.com'
+  script:
+    - match: ^https:\/\/(spclient\.wg\.spotify\.com|.*-spclient\.spotify\.com(:443)?)\/(bootstrap\/v1\/bootstrap|user-customization-service\/v1\/customize)$
+      name: spotify_js
+      type: response
+      require-body: true
+      binary-mode: true
+      timeout: 10
+
+script-providers:
+  spotify_js:
+    url: https://raw.githubusercontent.com/Amlabort/MY_clash/refs/heads/main/files/lpx/js/spot-proto-ev2.js
+    interval: 86400
