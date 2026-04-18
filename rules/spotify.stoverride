@@ -14,5 +14,5 @@ http:
 
 script-providers:
   spotify_js:
-    url: https://raw.githubusercontent.com/Amlabort/MY_clash/refs/heads/main/files/lpx/js/spot-proto-ev2.js
+    url: https://raw.githubusercontent.com/Amlabort/MY_clash/refs/heads/main/files/lpx/js/spot-proto-ev3.js
     interval: 86400
