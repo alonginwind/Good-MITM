@@ -18,6 +18,7 @@ pub struct RuleHttpHandler {
 pub struct JsInfo {
     pub uri: Uri,
     pub method: Method,
+    pub headers: Vec<(String, String)>,
     pub requires_body: i32,
     pub binary_body_mode: i32,
 }
@@ -60,6 +61,9 @@ impl HttpHandler<RuleHandlerCtx> for RuleHttpHandler {
         ctx.custom_data.js_info = JsInfo {
             uri: req.uri().clone(),
             method: req.method().clone(),
+            headers: req.headers().iter()
+                .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
+                .collect(),
             requires_body: 0,
             binary_body_mode: 0,
         };

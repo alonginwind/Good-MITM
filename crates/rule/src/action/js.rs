@@ -15,13 +15,18 @@ use rquickjs_extra_console::{Console, Formatter};
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::sync::{Mutex, OnceLock};
-use std::{cell::RefCell, collections::HashMap, rc::Rc, str::FromStr};
+use std::{collections::HashMap, str::FromStr};
 use tokio::sync::oneshot;
 
 static BYTECODE_CACHE: OnceLock<Mutex<HashMap<u64, Vec<u8>>>> = OnceLock::new();
+static PERSISTENT_STORE: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
 
 fn get_cache() -> &'static Mutex<HashMap<u64, Vec<u8>>> {
     BYTECODE_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn get_persistent_store() -> &'static Mutex<HashMap<String, String>> {
+    PERSISTENT_STORE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
 fn code_hash(code: &str) -> u64 {
@@ -142,10 +147,39 @@ pub async fn modify_req(code: &str, js_info: &JsInfo, req: Request<Body>) -> Res
             Ok(())
         });
 
+        // $persistentStore - 使用全局存储
+        let read_method = Func::from(move |key: String| -> Result<String, Error> {
+            log::info!("[read] 被调用");
+            let store = get_persistent_store().lock().unwrap();
+            Ok(store.get(&key).cloned().unwrap_or_default())
+        });
+        let write_method = Func::from(move |key: String, value: String| -> Result<(), Error> {
+            log::info!("[write] 被调用");
+            let mut store = get_persistent_store().lock().unwrap();
+            store.insert(key, value);
+            Ok(())
+        });
+        let persistent_store = Object::new(ctx.clone())?;
+        persistent_store.set("read", read_method)?;
+        persistent_store.set("write", write_method)?;
+
+        // $httpClient
+        let http_client = Object::new(ctx.clone())?;
+        let get_func = Func::from(move |_options: Object, callback: Function| -> Result<(), Error> {
+            log::info!("[HTTP GET] 被调用");
+            let ctx = callback.ctx().clone();
+            let null_val = Value::new_null(ctx);
+            callback.call::<_, ()>((null_val.clone(), null_val.clone(), null_val))?;
+            Ok(())
+        });
+        http_client.set("get", get_func)?;
+
         // 注入全局变量
         let globals = ctx.globals();
         globals.set("$request", req_obj)?;
         globals.set("$done", js_done)?;
+        globals.set("$persistentStore", persistent_store)?;
+        globals.set("$httpClient", http_client)?;
 
         // 从字节码加载
         let module = match unsafe { Module::load(ctx.clone(), &bytecode) } {
@@ -253,6 +287,12 @@ pub async fn modify_res(
         let req_obj = Object::new(ctx.clone())?;
         req_obj.set("url", js_info.uri.to_string())?;
         req_obj.set("method", js_info.method.to_string())?;
+        // 添加请求头
+        let req_headers = Object::new(ctx.clone())?;
+        for (key, value) in &js_info.headers {
+            req_headers.set(key.as_str(), value.as_str())?;
+        }
+        req_obj.set("headers", req_headers)?;
         let res_obj = to_js_object!(&ctx, &parts, &body_bytes, js_info.requires_body, js_info.binary_body_mode);
         let status_code = parts.status.as_u16();
         res_obj.set("status", status_code)?;
@@ -296,18 +336,15 @@ pub async fn modify_res(
             Ok(())
         });
 
-        // $persistentStore
-        let store_data: Rc<RefCell<HashMap<String, String>>> = Rc::new(RefCell::new(HashMap::new()));
-        let store_data_read = store_data.clone();
+        // $persistentStore - 使用全局存储
         let read_method = Func::from(move |key: String| -> Result<String, Error> {
             log::info!("[read] 被调用");
-            let store = store_data_read.borrow();
+            let store = get_persistent_store().lock().unwrap();
             Ok(store.get(&key).cloned().unwrap_or_default())
         });
-        let store_data_write = store_data.clone();
         let write_method = Func::from(move |key: String, value: String| -> Result<(), Error> {
             log::info!("[write] 被调用");
-            let mut store = store_data_write.borrow_mut();
+            let mut store = get_persistent_store().lock().unwrap();
             store.insert(key, value);
             Ok(())
         });
