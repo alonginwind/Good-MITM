@@ -16,6 +16,7 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::sync::{Mutex, OnceLock};
 use std::{cell::RefCell, collections::HashMap, rc::Rc, str::FromStr};
+use tokio::sync::oneshot;
 
 static BYTECODE_CACHE: OnceLock<Mutex<HashMap<u64, Vec<u8>>>> = OnceLock::new();
 
@@ -102,9 +103,9 @@ pub async fn modify_req(code: &str, js_info: &JsInfo, req: Request<Body>) -> Res
         req_obj.set("method", parts.method.to_string())?;
         req_obj.set("url", parts.uri.to_string())?;
 
-        // $done
-        let result_data: Rc<RefCell<Option<(Vec<(String, String)>, Vec<u8>)>>> = Rc::new(RefCell::new(None));
-        let result_clone = result_data.clone();
+        // $done - 使用 oneshot 通道通知完成
+        let (done_tx, done_rx) = oneshot::channel::<(Vec<(String, String)>, Vec<u8>)>();
+        let done_tx = std::sync::Mutex::new(Some(done_tx));
         let js_done = Func::from(move |obj: Value| -> Result<(), Error> {
             if let Some(obj_ref) = obj.as_object() {
                 let mut headers = Vec::new();
@@ -130,8 +131,10 @@ pub async fn modify_req(code: &str, js_info: &JsInfo, req: Request<Body>) -> Res
                     log::warn!("未收到body数据");
                     Vec::new()
                 };
-
-                *result_clone.borrow_mut() = Some((headers, body));
+                // 发送信号
+                if let Some(tx) = done_tx.lock().unwrap().take() {
+                    let _ = tx.send((headers, body));
+                }
             } else {
                 log::error!("$done 回传不是对象");
                 return Err(Error::new_from_js("TypeError", "$done 回传不是对象"));
@@ -174,17 +177,30 @@ pub async fn modify_req(code: &str, js_info: &JsInfo, req: Request<Body>) -> Res
             }
         };
 
+        // 等待 $done 被调用（最多等待 8 秒）
+        let done_result = match tokio::time::timeout(std::time::Duration::from_secs(8), done_rx).await {
+            Ok(Ok(result)) => Some(result),
+            Ok(Err(_)) => {
+                log::error!("$done 通道被关闭");
+                None
+            }
+            Err(_) => {
+                log::warn!("等待 $done 超时（8秒）");
+                None
+            }
+        };
+
         // 使用 $done 回传的结果
-        if let Some((headers, body)) = result_data.borrow().as_ref() {
-            for (key, value) in headers {
-                if let Ok(header_name) = HeaderName::from_str(&key) {
+        if let Some((headers, body)) = done_result {
+            for (key, value) in &headers {
+                if let Ok(header_name) = HeaderName::from_str(key) {
                     if let Ok(header_value) = value.parse() {
                         parts.headers.insert(header_name, header_value);
                     }
                 }
             }
             let body = if !body.is_empty() {
-                Bytes::from(body.clone())
+                Bytes::from(body)
             } else {
                 body_bytes
             };
@@ -241,9 +257,9 @@ pub async fn modify_res(
         let status_code = parts.status.as_u16();
         res_obj.set("status", status_code)?;
 
-        // $done
-        let result_data: Rc<RefCell<Option<(Vec<(String, String)>, Vec<u8>)>>> = Rc::new(RefCell::new(None));
-        let result_clone = result_data.clone();
+        // $done - 使用 oneshot 通道通知完成
+        let (done_tx, done_rx) = oneshot::channel::<(Vec<(String, String)>, Vec<u8>)>();
+        let done_tx = std::sync::Mutex::new(Some(done_tx));
         let js_done = Func::from(move |obj: Value| -> Result<(), Error> {
             if let Some(obj_ref) = obj.as_object() {
                 let mut headers = Vec::new();
@@ -269,7 +285,10 @@ pub async fn modify_res(
                     log::warn!("未收到body数据");
                     Vec::new()
                 };
-                *result_clone.borrow_mut() = Some((headers, body));
+                // 发送信号
+                if let Some(tx) = done_tx.lock().unwrap().take() {
+                    let _ = tx.send((headers, body));
+                }
             } else {
                 log::error!("$done 回传不是对象");
                 return Err(Error::new_from_js("TypeError", "$done 回传不是对象"));
@@ -345,17 +364,30 @@ pub async fn modify_res(
             }
         };
 
+        // 等待 $done 被调用（最多等待 8 秒）
+        let done_result = match tokio::time::timeout(std::time::Duration::from_secs(8), done_rx).await {
+            Ok(Ok(result)) => Some(result),
+            Ok(Err(_)) => {
+                log::error!("$done 通道被关闭");
+                None
+            }
+            Err(_) => {
+                log::warn!("等待 $done 超时（8秒）");
+                None
+            }
+        };
+
         // 使用 $done 回传的结果
-        if let Some((headers, body)) = result_data.borrow().as_ref() {
-            for (key, value) in headers {
-                if let Ok(header_name) = HeaderName::from_str(&key) {
+        if let Some((headers, body)) = done_result {
+            for (key, value) in &headers {
+                if let Ok(header_name) = HeaderName::from_str(key) {
                     if let Ok(header_value) = value.parse() {
                         parts.headers.insert(header_name, header_value);
                     }
                 }
             }
             let body = if !body.is_empty() {
-                Bytes::from(body.clone())
+                Bytes::from(body)
             } else {
                 body_bytes
             };

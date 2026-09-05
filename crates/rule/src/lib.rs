@@ -10,6 +10,8 @@ mod action;
 mod cache;
 mod filter;
 mod handler;
+#[cfg(feature = "js")]
+mod script_cache;
 
 #[derive(Debug, Clone)]
 pub struct Rule {
@@ -92,12 +94,24 @@ impl Rule {
                 #[cfg(feature = "js")]
                 Action::JsReq {
                     ref code,
+                    url: ref script_url,
                     requires_body,
                     binary_body_mode,
                 } => {
-                    info!("[LogRequest] {}", url);
-                    // 提取需要在闭包中使用的数据
-                    let code = code.clone();
+                    info!("[JsReq] {}", url);
+                    // 解析脚本：code 优先，否则从 url 拉取
+                    let code = match script_cache::resolve_script(code, script_url.as_ref()).await {
+                        Ok(c) => c,
+                        Err(e) => {
+                            error!("脚本解析失败: {}", e);
+                            return RequestOrResponse::Response(
+                                Response::builder()
+                                    .status(StatusCode::BAD_REQUEST)
+                                    .body(Body::default())
+                                    .unwrap(),
+                            );
+                        }
+                    };
                     let mut js_info = js_info.clone();
                     js_info.requires_body = *requires_body;
                     js_info.binary_body_mode = *binary_body_mode;
@@ -114,7 +128,7 @@ impl Rule {
 
                     match result {
                         Ok(Ok(modified_req)) => {
-                            tmp_req = modified_req; // 更新响应，继续处理后续 actions
+                            tmp_req = modified_req; // 更新请求，继续处理后续 actions
                         }
                         Ok(Err(e)) => {
                             error!("JS error: {}", e);
@@ -161,12 +175,22 @@ impl Rule {
                 #[cfg(feature = "js")]
                 Action::JsRes {
                     ref code,
+                    url: ref script_url,
                     requires_body,
                     binary_body_mode,
                 } => {
-                    info!("[LogResponse] {}", url);
-                    // 提取需要在闭包中使用的数据
-                    let code = code.clone();
+                    info!("[JsRes] {}", url);
+                    // 解析脚本：code 优先，否则从 url 拉取
+                    let code = match script_cache::resolve_script(code, script_url.as_ref()).await {
+                        Ok(c) => c,
+                        Err(e) => {
+                            error!("脚本解析失败: {}", e);
+                            return Response::builder()
+                                .status(StatusCode::BAD_REQUEST)
+                                .body(Body::default())
+                                .unwrap();
+                        }
+                    };
                     let mut js_info = js_info.clone();
                     js_info.requires_body = *requires_body;
                     js_info.binary_body_mode = *binary_body_mode;

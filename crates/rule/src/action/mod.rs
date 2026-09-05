@@ -19,7 +19,10 @@ pub enum Action {
 
     #[cfg(feature = "js")]
     JsReq {
+        #[serde(default)]
         code: String,
+        #[serde(default)]
+        url: Option<String>,
         #[serde(rename = "requires-body", default)]
         requires_body: i32,
         #[serde(rename = "binary-body-mode", default)]
@@ -27,7 +30,10 @@ pub enum Action {
     },
     #[cfg(feature = "js")]
     JsRes {
+        #[serde(default)]
         code: String,
+        #[serde(default)]
+        url: Option<String>,
         #[serde(rename = "requires-body", default)]
         requires_body: i32,
         #[serde(rename = "binary-body-mode", default)]
