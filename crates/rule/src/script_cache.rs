@@ -59,8 +59,11 @@ pub async fn resolve_script(code: &str, url: Option<&String>) -> Result<String> 
                 info!("[ScriptCache] 内存缓存命中: {}", url);
                 return Ok(entry.code.clone());
             }
-            info!("[ScriptCache] 缓存已过期({:.1}h), 重新拉取: {}",
-                age.as_secs_f64() / 3600.0, url);
+            info!(
+                "[ScriptCache] 缓存已过期({:.1}h), 重新拉取: {}",
+                age.as_secs_f64() / 3600.0,
+                url
+            );
         } else {
             info!("[ScriptCache] 首次拉取: {}", url);
         }
@@ -82,45 +85,48 @@ pub async fn resolve_script(code: &str, url: Option<&String>) -> Result<String> 
     };
 
     // 3. 尝试获取或执行拉取
-    let code = match in_flight_cell.get_or_try_init(|| async {
-        // 再次检查缓存（可能在等待锁期间被其他请求填充）
-        {
-            let mem = cache.memory.lock().unwrap();
-            if let Some(entry) = mem.get(url) {
-                let age = SystemTime::now()
-                    .duration_since(entry.last_check)
-                    .unwrap_or(Duration::MAX);
-                if age < CACHE_TTL {
-                    info!("[ScriptCache] 缓存命中（等待后）: {}", url);
-                    return Ok::<String, anyhow::Error>(entry.code.clone());
+    let code = match in_flight_cell
+        .get_or_try_init(|| async {
+            // 再次检查缓存（可能在等待锁期间被其他请求填充）
+            {
+                let mem = cache.memory.lock().unwrap();
+                if let Some(entry) = mem.get(url) {
+                    let age = SystemTime::now()
+                        .duration_since(entry.last_check)
+                        .unwrap_or(Duration::MAX);
+                    if age < CACHE_TTL {
+                        info!("[ScriptCache] 缓存命中（等待后）: {}", url);
+                        return Ok::<String, anyhow::Error>(entry.code.clone());
+                    }
                 }
             }
-        }
 
-        // 执行拉取
-        match fetch_remote(url).await {
-            Ok(code) => {
-                let size = code.len();
-                // 更新内存缓存
-                {
-                    let mut mem = cache.memory.lock().unwrap();
-                    mem.insert(
-                        url.clone(),
-                        CacheEntry {
-                            code: code.clone(),
-                            last_check: SystemTime::now(),
-                        },
-                    );
+            // 执行拉取
+            match fetch_remote(url).await {
+                Ok(code) => {
+                    let size = code.len();
+                    // 更新内存缓存
+                    {
+                        let mut mem = cache.memory.lock().unwrap();
+                        mem.insert(
+                            url.clone(),
+                            CacheEntry {
+                                code: code.clone(),
+                                last_check: SystemTime::now(),
+                            },
+                        );
+                    }
+                    info!("[ScriptCache] 拉取成功: {} ({} bytes)", url, size);
+                    Ok(code)
                 }
-                info!("[ScriptCache] 拉取成功: {} ({} bytes)", url, size);
-                Ok(code)
+                Err(e) => {
+                    error!("[ScriptCache] 拉取失败: {} - {}", url, e);
+                    Ok(String::new())
+                }
             }
-            Err(e) => {
-                error!("[ScriptCache] 拉取失败: {} - {}", url, e);
-                Ok(String::new())
-            }
-        }
-    }).await {
+        })
+        .await
+    {
         Ok(code) => code.clone(),
         Err(_) => String::new(),
     };
