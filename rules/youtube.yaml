@@ -1,3 +1,23 @@
+- name: "youtube-1"
+  mitm: "*.googlevideo.com"
+  filter:
+    url-regex: '(^https?:\/\/[\w-]+\.googlevideo\.com\/(?!dclk_video_ads).+?)&ctier=L(&.+?),ctier,(.+)'
+  action:
+    redirect: "$1$2$3"
+
+- name: "youtube-2"
+  mitm:
+    - "*.googlevideo.com"
+    - "www.youtube.com"
+    - "s.youtube.com"
+  filters:
+    - url-regex: '^https?:\/\/[\w-]+\.googlevideo\.com\/(?!(dclk_video_ads|videoplayback\?)).+&oad'
+    - url-regex: '^https?:\/\/(www|s)\.youtube\.com\/api\/stats\/ads'
+    - url-regex: '^https?:\/\/(www|s)\.youtube\.com\/(pagead|ptracking)'
+    - url-regex: '^https?:\/\/s\.youtube\.com\/api\/stats\/qoe\?adcontext'
+  action:
+    reject: 200
+
 - name: "youtube-res"
   mitm: "youtubei.googleapis.com"
   filter:
