@@ -8,13 +8,8 @@
 - name: "youtube-2"
   mitm:
     - "*.googlevideo.com"
-    - "www.youtube.com"
-    - "s.youtube.com"
-  filters:
-    - url-regex: '^https?:\/\/[\w-]+\.googlevideo\.com\/(?!(dclk_video_ads|videoplayback\?)).+&oad'
-    - url-regex: '^https?:\/\/(www|s)\.youtube\.com\/api\/stats\/ads'
-    - url-regex: '^https?:\/\/(www|s)\.youtube\.com\/(pagead|ptracking)'
-    - url-regex: '^https?:\/\/s\.youtube\.com\/api\/stats\/qoe\?adcontext'
+  filter:
+    url-regex: '^https?:\/\/[\w-]+\.googlevideo\.com\/(?!(dclk_video_ads|videoplayback\?)).+&oad'
   action:
     reject: 200
 
