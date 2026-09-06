@@ -148,10 +148,10 @@ pub async fn modify_req(code: &str, js_info: &JsInfo, req: Request<Body>) -> Res
         });
 
         // $persistentStore - 使用全局存储
-        let read_method = Func::from(move |key: String| -> Result<String, Error> {
+        let read_method = Func::from(move |key: String| -> Result<Option<String>, Error> {
             log::info!("[read] 被调用");
             let store = get_persistent_store().lock().unwrap();
-            Ok(store.get(&key).cloned().unwrap_or_default())
+            Ok(store.get(&key).cloned())
         });
         let write_method = Func::from(move |key: String, value: String| -> Result<(), Error> {
             log::info!("[write] 被调用");
@@ -337,10 +337,10 @@ pub async fn modify_res(
         });
 
         // $persistentStore - 使用全局存储
-        let read_method = Func::from(move |key: String| -> Result<String, Error> {
+        let read_method = Func::from(move |key: String| -> Result<Option<String>, Error> {
             log::info!("[read] 被调用");
             let store = get_persistent_store().lock().unwrap();
-            Ok(store.get(&key).cloned().unwrap_or_default())
+            Ok(store.get(&key).cloned())
         });
         let write_method = Func::from(move |key: String, value: String| -> Result<(), Error> {
             log::info!("[write] 被调用");
